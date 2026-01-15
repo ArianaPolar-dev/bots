@@ -137,7 +137,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return scoreDiff * 10 - penaltyThirds;
   }
 
-  // ---------- ENDGAME: detección de cajas y cadenas ----------
+  // ---------- ENDGAME: cajas, cadenas y resultado futuro ----------
   function countBoxSides(s, r, c) {
     let sides = 0;
     if (s.horizontals[r][c]) sides++;
@@ -147,22 +147,18 @@ document.addEventListener("DOMContentLoaded", () => {
     return sides;
   }
 
-  // Devuelve array de cadenas: cada cadena es número de cajas en esa cadena
   function getChains(s) {
     const visited = Array.from({ length: N - 1 }, () =>
       Array(N - 1).fill(false)
     );
     const chains = [];
-
     const inBounds = (r, c) => r >= 0 && r < N - 1 && c >= 0 && c < N - 1;
 
     for (let r = 0; r < N - 1; r++) {
       for (let c = 0; c < N - 1; c++) {
         if (visited[r][c]) continue;
-        // caja viva (no llena)
         if (countBoxSides(s, r, c) >= 4) continue;
 
-        // buscamos solo cajas con 2 lados libres (cadenas)
         const sides = countBoxSides(s, r, c);
         if (sides !== 2) continue;
 
@@ -176,7 +172,6 @@ document.addEventListener("DOMContentLoaded", () => {
           visited[cr][cc] = true;
           length++;
 
-          // vecinos (arriba, abajo, izq, der)
           const neigh = [
             [cr - 1, cc],
             [cr + 1, cc],
@@ -201,32 +196,46 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function isEndgame(s) {
     const movesLeft = getAvailableMoves(s).length;
-    // Heurística: cuando quedan pocas líneas, y la mayoría de cajas son de 2 o 3 lados
-    if (movesLeft > 30) return false; // ajustable
+    if (movesLeft > 30) return false;
     const chains = getChains(s);
     return chains.length > 0;
   }
 
-  // Elige mover en la cadena más corta (para minimizar lo que se regala)
+  // Estimación simplificada de diferencia final usando teoría de cadenas:
+  // cada cadena de longitud L da (L-4) de ventaja neta al que controla la cadena. [web:10][web:51]
+  function estimateFinalScoreDiff(s) {
+    const chains = getChains(s);
+    const currentDiff = s.scoreAI - s.scoreOpponent;
+    if (chains.length === 0) return currentDiff;
+
+    let netGain = 0;
+    for (const len of chains) {
+      netGain += (len - 4);
+    }
+    return currentDiff + netGain;
+  }
+
+  // Endgame: elige jugada teniendo en cuenta resultado final esperado
   function getBestMoveEndgame(s) {
     const moves = getAvailableMoves(s);
     if (moves.length === 0) return null;
 
-    // Estrategia simple:
-    // 1) Evita dar 3er lado si puedes.
-    // 2) Si tienes que abrir cadena, abre la que genere la cadena más corta.
     let bestMove = null;
-    let bestScore = Infinity;
+    let bestScore = -Infinity;
 
     for (const move of moves) {
       const next = applyMove(s, move);
-      // penaliza número de cajas con 3 lados + longitud total de cadenas
+
+      const finalDiff = estimateFinalScoreDiff(next);
       const thirds = countThirdSides(next);
       const chains = getChains(next);
       const totalChainLen = chains.reduce((a, b) => a + b, 0);
-      const score = thirds * 5 + totalChainLen; // pesos heurísticos
 
-      if (score < bestScore) {
+      // favorece posiciones donde la diferencia final estimada es positiva,
+      // pero evita crear muchas terceras líneas y cadenas enormes si vas perdiendo. [web:10][web:49]
+      const score = finalDiff * 10 - thirds * 3 - totalChainLen;
+
+      if (score > bestScore || bestMove === null) {
         bestScore = score;
         bestMove = move;
       }
@@ -243,7 +252,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (depth === 0 || isTerminal(s) || performance.now() > deadline) {
       return evaluate(s);
     }
-    // si estamos en endgame, evita recursión profunda: ya usamos heurística específica
     if (isEndgame(s)) {
       return evaluate(s);
     }
@@ -274,7 +282,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function getBestMove(s) {
-    // si estamos en endgame, usar estrategia especial de cadenas
     if (isEndgame(s)) {
       const m = getBestMoveEndgame(s);
       if (m) return m;
@@ -311,7 +318,6 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, size, size);
 
-    // cajas
     for (let r = 0; r < N - 1; r++) {
       for (let c = 0; c < N - 1; c++) {
         if (isBoxFull(state, r, c)) {
@@ -323,7 +329,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // líneas
     ctx.lineWidth = 6;
     ctx.strokeStyle = "#0000ff";
     for (let r = 0; r < N; r++) {
@@ -353,7 +358,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // puntos
     ctx.fillStyle = "#000000";
     for (let r = 0; r < N; r++) {
       for (let c = 0; c < N; c++) {
@@ -365,7 +369,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // marcador
     ctx.fillStyle = "#000000";
     ctx.font = "16px system-ui";
     ctx.fillText(`Oponente: ${state.scoreOpponent}`, 10, 20);
@@ -397,7 +400,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const dr = p2.row - p1.row;
     const dc = p2.col - p1.col;
 
-    // horizontal
     if (p1.row === p2.row && Math.abs(dc) === 1) {
       const r = p1.row;
       const c = Math.min(p1.col, p2.col);
@@ -406,7 +408,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // vertical
     if (p1.col === p2.col && Math.abs(dr) === 1) {
       const r = Math.min(p1.row, p2.row);
       const c = p1.col;
@@ -469,13 +470,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const point = getPointFromClick(x, y);
     if (!point) return;
 
-    // primer clic: selecciona punto
     if (!selectedPoint) {
       selectedPoint = point;
       return;
     }
 
-    // segundo clic: si es mismo punto, no crear línea
     if (selectedPoint.row === point.row && selectedPoint.col === point.col) {
       selectedPoint = point;
       return;
@@ -499,7 +498,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // estado inicial
   state = createInitialState();
   drawBoard();
 });
