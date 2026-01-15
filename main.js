@@ -137,6 +137,104 @@ document.addEventListener("DOMContentLoaded", () => {
     return scoreDiff * 10 - penaltyThirds;
   }
 
+  // ---------- ENDGAME: detección de cajas y cadenas ----------
+  function countBoxSides(s, r, c) {
+    let sides = 0;
+    if (s.horizontals[r][c]) sides++;
+    if (s.horizontals[r + 1][c]) sides++;
+    if (s.verticals[r][c]) sides++;
+    if (s.verticals[r][c + 1]) sides++;
+    return sides;
+  }
+
+  // Devuelve array de cadenas: cada cadena es número de cajas en esa cadena
+  function getChains(s) {
+    const visited = Array.from({ length: N - 1 }, () =>
+      Array(N - 1).fill(false)
+    );
+    const chains = [];
+
+    const inBounds = (r, c) => r >= 0 && r < N - 1 && c >= 0 && c < N - 1;
+
+    for (let r = 0; r < N - 1; r++) {
+      for (let c = 0; c < N - 1; c++) {
+        if (visited[r][c]) continue;
+        // caja viva (no llena)
+        if (countBoxSides(s, r, c) >= 4) continue;
+
+        // buscamos solo cajas con 2 lados libres (cadenas)
+        const sides = countBoxSides(s, r, c);
+        if (sides !== 2) continue;
+
+        let length = 0;
+        const stack = [[r, c]];
+
+        while (stack.length) {
+          const [cr, cc] = stack.pop();
+          if (visited[cr][cc]) continue;
+          if (countBoxSides(s, cr, cc) !== 2) continue;
+          visited[cr][cc] = true;
+          length++;
+
+          // vecinos (arriba, abajo, izq, der)
+          const neigh = [
+            [cr - 1, cc],
+            [cr + 1, cc],
+            [cr, cc - 1],
+            [cr, cc + 1],
+          ];
+          for (const [nr, nc] of neigh) {
+            if (!inBounds(nr, nc)) continue;
+            if (visited[nr][nc]) continue;
+            if (countBoxSides(s, nr, nc) === 2) {
+              stack.push([nr, nc]);
+            }
+          }
+        }
+
+        if (length > 0) chains.push(length);
+      }
+    }
+
+    return chains;
+  }
+
+  function isEndgame(s) {
+    const movesLeft = getAvailableMoves(s).length;
+    // Heurística: cuando quedan pocas líneas, y la mayoría de cajas son de 2 o 3 lados
+    if (movesLeft > 30) return false; // ajustable
+    const chains = getChains(s);
+    return chains.length > 0;
+  }
+
+  // Elige mover en la cadena más corta (para minimizar lo que se regala)
+  function getBestMoveEndgame(s) {
+    const moves = getAvailableMoves(s);
+    if (moves.length === 0) return null;
+
+    // Estrategia simple:
+    // 1) Evita dar 3er lado si puedes.
+    // 2) Si tienes que abrir cadena, abre la que genere la cadena más corta.
+    let bestMove = null;
+    let bestScore = Infinity;
+
+    for (const move of moves) {
+      const next = applyMove(s, move);
+      // penaliza número de cajas con 3 lados + longitud total de cadenas
+      const thirds = countThirdSides(next);
+      const chains = getChains(next);
+      const totalChainLen = chains.reduce((a, b) => a + b, 0);
+      const score = thirds * 5 + totalChainLen; // pesos heurísticos
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+    }
+
+    return bestMove;
+  }
+
   // ---------- Minimax + límite de tiempo ----------
   const MAX_DEPTH = 6;
   const MAX_TIME_MS = 200;
@@ -145,6 +243,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (depth === 0 || isTerminal(s) || performance.now() > deadline) {
       return evaluate(s);
     }
+    // si estamos en endgame, evita recursión profunda: ya usamos heurística específica
+    if (isEndgame(s)) {
+      return evaluate(s);
+    }
+
     const moves = getAvailableMoves(s);
 
     if (s.currentPlayer === PLAYER_AI) {
@@ -171,6 +274,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function getBestMove(s) {
+    // si estamos en endgame, usar estrategia especial de cadenas
+    if (isEndgame(s)) {
+      const m = getBestMoveEndgame(s);
+      if (m) return m;
+    }
+
     const moves = getAvailableMoves(s);
     if (moves.length === 0) return null;
 
@@ -349,8 +458,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Click en canvas ----------
   canvas.addEventListener("click", async e => {
-    console.log("CLICK canvas"); // debug
-
     if (!state || !mode) return;
     if (blocking) return;
     if (isTerminal(state)) return;
