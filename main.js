@@ -1,4 +1,29 @@
-const N = 5;
+document.addEventListener("DOMContentLoaded", () => {
+  const N = 5;
+  const canvas = document.getElementById("board");
+  const ctx = canvas.getContext("2d");
+  const size = canvas.width;
+  const margin = 40;
+  const gridSize = size - 2 * margin;
+  const step = gridSize / (N - 1);
+
+  const PLAYER_OPPONENT = -1;
+  const PLAYER_AI = 1;
+
+  let state = null;
+  let mode = null;
+  let blocking = false;
+
+  const btnHumanFirst = document.getElementById("btnHumanFirst");
+  const btnOpponentFirst = document.getElementById("btnOpponentFirst");
+  const infoEl = document.getElementById("info");
+
+  if (!canvas || !ctx || !btnHumanFirst || !btnOpponentFirst || !infoEl) {
+    console.error("Faltan elementos en el DOM (id mal escrito en HTML).");
+    return;
+  }
+
+  const N = 5;
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d");
 const size = canvas.width;
@@ -369,3 +394,8 @@ canvas.addEventListener("click", async e => {
 // Estado inicial solo para ver el tablero
 state = createInitialState();
 drawBoard();
+
+  // al final de todo:
+  state = createInitialState();
+  drawBoard();
+});
