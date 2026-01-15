@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let state = null;
   let mode = null; // "HUMAN_FIRST" o "OPPONENT_FIRST"
   let blocking = false;
+  let selectedPoint = null; // {row, col} o null
 
   const btnHumanFirst = document.getElementById("btnHumanFirst");
   const btnOpponentFirst = document.getElementById("btnOpponentFirst");
@@ -36,7 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
       verticals,
       scoreAI: 0,
       scoreOpponent: 0,
-      currentPlayer: PLAYER_OPPONENT, // por defecto
+      currentPlayer: PLAYER_OPPONENT,
     };
   }
 
@@ -138,7 +139,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Minimax + límite de tiempo ----------
   const MAX_DEPTH = 6;
-  const MAX_TIME_MS = 200; // máx ~0.2s por jugada
+  const MAX_TIME_MS = 200;
 
   function minimax(s, depth, alpha, beta, deadline) {
     if (depth === 0 || isTerminal(s) || performance.now() > deadline) {
@@ -178,7 +179,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const start = performance.now();
     const deadline = start + MAX_TIME_MS;
 
-    // búsqueda iterativa: 2..MAX_DEPTH
     for (let depth = 2; depth <= MAX_DEPTH; depth++) {
       if (performance.now() > deadline) break;
 
@@ -263,63 +263,50 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.fillText(`IA: ${state.scoreAI}`, size - 120, 20);
   }
 
-  // ---------- Conversión de clic a movimiento ----------
-  function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
-    const A = px - x1;
-    const B = py - y1;
-    const C = x2 - x1;
-    const D = y2 - y1;
-    const dot = A * C + B * D;
-    const lenSq = C * C + D * D;
-    let param = -1;
-    if (lenSq !== 0) param = dot / lenSq;
-
-    let xx, yy;
-    if (param < 0) {
-      xx = x1; yy = y1;
-    } else if (param > 1) {
-      xx = x2; yy = y2;
-    } else {
-      xx = x1 + param * C;
-      yy = y1 + param * D;
-    }
-    const dx = px - xx;
-    const dy = py - yy;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-
-  function getMoveFromClick(x, y) {
+  // ---------- Selección de puntos ----------
+  function getPointFromClick(x, y) {
     let best = null;
-    let bestDist = 12;
+    let bestDist = 10;
 
-    // horizontales
     for (let r = 0; r < N; r++) {
-      for (let c = 0; c < N - 1; c++) {
-        const x1 = margin + c * step;
-        const y1 = margin + r * step;
-        const x2 = margin + (c + 1) * step;
-        const dist = pointToSegmentDistance(x, y, x1, y1, x2, y1);
-        if (dist < bestDist && !state.horizontals[r][c]) {
-          bestDist = dist;
-          best = { type: "H", row: r, col: c };
-        }
-      }
-    }
-
-    // verticales
-    for (let r = 0; r < N - 1; r++) {
       for (let c = 0; c < N; c++) {
-        const x1 = margin + c * step;
-        const y1 = margin + r * step;
-        const y2 = margin + (r + 1) * step;
-        const dist = pointToSegmentDistance(x, y, x1, y1, x1, y2);
-        if (dist < bestDist && !state.verticals[r][c]) {
+        const px = margin + c * step;
+        const py = margin + r * step;
+        const dx = x - px;
+        const dy = y - py;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < bestDist) {
           bestDist = dist;
-          best = { type: "V", row: r, col: c };
+          best = { row: r, col: c };
         }
       }
     }
     return best;
+  }
+
+  function getMoveFromPoints(p1, p2) {
+    const dr = p2.row - p1.row;
+    const dc = p2.col - p1.col;
+
+    // horizontal
+    if (p1.row === p2.row && Math.abs(dc) === 1) {
+      const r = p1.row;
+      const c = Math.min(p1.col, p2.col);
+      if (!state.horizontals[r][c]) {
+        return { type: "H", row: r, col: c };
+      }
+    }
+
+    // vertical
+    if (p1.col === p2.col && Math.abs(dr) === 1) {
+      const r = Math.min(p1.row, p2.row);
+      const c = p1.col;
+      if (!state.verticals[r][c]) {
+        return { type: "V", row: r, col: c };
+      }
+    }
+
+    return null;
   }
 
   // ---------- IA ----------
@@ -337,24 +324,26 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---------- Controles ----------
   btnHumanFirst.addEventListener("click", () => {
     mode = "HUMAN_FIRST";
+    selectedPoint = null;
     state = createInitialState();
-    state.currentPlayer = PLAYER_AI; // IA mueve primero (te sugiere)
-    infoEl.textContent = "Modo: La IA hace la primera jugada para sugerirte.";
+    state.currentPlayer = PLAYER_AI;
+    infoEl.textContent = "La IA hace la primera jugada para sugerirte.";
     drawBoard();
     blocking = true;
     aiTurn().then(() => {
       blocking = false;
       state.currentPlayer = PLAYER_OPPONENT;
-      infoEl.textContent = "Ahora replica en el papel y sigue marcando las jugadas del oponente.";
+      infoEl.textContent = "Marca las jugadas del oponente; la IA seguirá respondiendo.";
       drawBoard();
     });
   });
 
   btnOpponentFirst.addEventListener("click", () => {
     mode = "OPPONENT_FIRST";
+    selectedPoint = null;
     state = createInitialState();
     state.currentPlayer = PLAYER_OPPONENT;
-    infoEl.textContent = "Marca las jugadas del oponente; la IA responde.";
+    infoEl.textContent = "Marca las jugadas del oponente tocando dos puntos adyacentes.";
     drawBoard();
   });
 
@@ -367,10 +356,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const move = getMoveFromClick(x, y);
+
+    const point = getPointFromClick(x, y);
+    if (!point) return;
+
+    // primer clic: selecciona punto
+    if (!selectedPoint) {
+      selectedPoint = point;
+      return;
+    }
+
+    // segundo clic: intento de línea
+    const move = getMoveFromPoints(selectedPoint, point);
+    selectedPoint = null;
     if (!move) return;
 
-    // El clic SIEMPRE es jugada del oponente
     if (state.currentPlayer !== PLAYER_OPPONENT) return;
 
     state = applyMove(state, move);
