@@ -349,6 +349,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Click en canvas ----------
   canvas.addEventListener("click", async e => {
+    console.log("CLICK canvas"); // debug
+
     if (!state || !mode) return;
     if (blocking) return;
     if (isTerminal(state)) return;
@@ -366,7 +368,12 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // segundo clic: intento de línea
+    // segundo clic: si es mismo punto, no crear línea
+    if (selectedPoint.row === point.row && selectedPoint.col === point.col) {
+      selectedPoint = point;
+      return;
+    }
+
     const move = getMoveFromPoints(selectedPoint, point);
     selectedPoint = null;
     if (!move) return;
