@@ -1,5 +1,4 @@
-// ----- Parámetros del tablero -----
-const N = 5; // puntos 5x5 => cajas 4x4
+const N = 5;
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d");
 const size = canvas.width;
@@ -7,10 +6,14 @@ const margin = 40;
 const gridSize = size - 2 * margin;
 const step = gridSize / (N - 1);
 
-const PLAYER_HUMAN = -1;
-const PLAYER_AI = 1;
+const PLAYER_OPPONENT = -1; // tu contrincante humano (cuando tú solo “apuntas” sus jugadas)
+const PLAYER_AI = 1;        // IA
 
-// ----- Estado del juego -----
+let state = null;
+let mode = null; // "HUMAN_FIRST" (IA sugiere) o "OPPONENT_FIRST"
+let blocking = false;
+
+// ---------- Estado ----------
 function createInitialState() {
   const horizontals = Array.from({ length: N }, () =>
     Array(N - 1).fill(false)
@@ -22,20 +25,17 @@ function createInitialState() {
     horizontals,
     verticals,
     scoreAI: 0,
-    scoreHuman: 0,
-    currentPlayer: PLAYER_HUMAN, // empiezas tú
+    scoreOpponent: 0,
+    currentPlayer: PLAYER_OPPONENT, // por defecto
   };
 }
 
-let state = createInitialState();
-
-// ----- Utilidades -----
 function cloneState(s) {
   return {
     horizontals: s.horizontals.map(r => r.slice()),
     verticals: s.verticals.map(r => r.slice()),
     scoreAI: s.scoreAI,
-    scoreHuman: s.scoreHuman,
+    scoreOpponent: s.scoreOpponent,
     currentPlayer: s.currentPlayer,
   };
 }
@@ -66,7 +66,6 @@ function isBoxFull(s, r, c) {
 
 function boxCompleted(s, move) {
   let completed = 0;
-
   if (move.type === "H") {
     const r = move.row;
     const c = move.col;
@@ -92,9 +91,10 @@ function applyMove(s, move) {
   const completed = boxCompleted(next, move);
   if (completed > 0) {
     if (s.currentPlayer === PLAYER_AI) next.scoreAI += completed;
-    else next.scoreHuman += completed;
+    else next.scoreOpponent += completed;
   } else {
-    next.currentPlayer = s.currentPlayer === PLAYER_AI ? PLAYER_HUMAN : PLAYER_AI;
+    next.currentPlayer =
+      s.currentPlayer === PLAYER_AI ? PLAYER_OPPONENT : PLAYER_AI;
   }
   return next;
 }
@@ -103,7 +103,7 @@ function isTerminal(s) {
   return getAvailableMoves(s).length === 0;
 }
 
-// ----- Heurística -----
+// ---------- Heurística ----------
 function countThirdSides(s) {
   let count = 0;
   for (let r = 0; r < N - 1; r++) {
@@ -120,20 +120,19 @@ function countThirdSides(s) {
 }
 
 function evaluate(s) {
-  const scoreDiff = s.scoreAI - s.scoreHuman;
+  const scoreDiff = s.scoreAI - s.scoreOpponent;
   const thirds = countThirdSides(s);
   const penaltyThirds = thirds * 2;
   return scoreDiff * 10 - penaltyThirds;
 }
 
-// ----- Minimax con poda alfa-beta -----
-const MAX_DEPTH = 6; // si va lento, bájalo a 4
+// ---------- Minimax ----------
+const MAX_DEPTH = 6;
 
 function minimax(s, depth, alpha, beta) {
   if (depth === 0 || isTerminal(s)) {
     return evaluate(s);
   }
-
   const moves = getAvailableMoves(s);
 
   if (s.currentPlayer === PLAYER_AI) {
@@ -162,7 +161,6 @@ function minimax(s, depth, alpha, beta) {
 function getBestMove(s) {
   const moves = getAvailableMoves(s);
   if (moves.length === 0) return null;
-
   let bestMove = null;
   let bestValue = -Infinity;
 
@@ -177,61 +175,49 @@ function getBestMove(s) {
   return bestMove;
 }
 
-// ----- Dibujo -----
+// ---------- Dibujo ----------
 function drawBoard() {
   ctx.clearRect(0, 0, size, size);
-
-  // Fondo
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, size, size);
 
-  // Cajas reclamadas
+  // cajas (solo como relleno simple)
   for (let r = 0; r < N - 1; r++) {
     for (let c = 0; c < N - 1; c++) {
-      const full = isBoxFull(state, r, c);
-      if (full) {
-        // Determinar de quién es (aprox: miramos quién tiene más puntos cercanos)
-        // Simplificado: colorear azul/rojo según quién va ganando.
+      if (isBoxFull(state, r, c)) {
         const x = margin + c * step;
         const y = margin + r * step;
-        const color =
-          state.scoreAI > state.scoreHuman ? "rgba(255,0,0,0.25)" : "rgba(0,0,255,0.25)";
-        ctx.fillStyle = color;
+        ctx.fillStyle = "rgba(0, 150, 255, 0.2)";
         ctx.fillRect(x, y, step, step);
       }
     }
   }
 
-  // Líneas jugadas
+  // Líneas
   ctx.lineWidth = 6;
-  // Horizontales
+  ctx.strokeStyle = "#0000ff";
   for (let r = 0; r < N; r++) {
     for (let c = 0; c < N - 1; c++) {
       if (state.horizontals[r][c]) {
         const x1 = margin + c * step;
         const y1 = margin + r * step;
         const x2 = margin + (c + 1) * step;
-        const y2 = y1;
-        ctx.strokeStyle = "#0000ff"; // humano/IA mismo color para simplificar
         ctx.beginPath();
         ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
+        ctx.lineTo(x2, y1);
         ctx.stroke();
       }
     }
   }
-  // Verticales
   for (let r = 0; r < N - 1; r++) {
     for (let c = 0; c < N; c++) {
       if (state.verticals[r][c]) {
         const x1 = margin + c * step;
         const y1 = margin + r * step;
-        const x2 = x1;
         const y2 = margin + (r + 1) * step;
-        ctx.strokeStyle = "#0000ff";
         ctx.beginPath();
         ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
+        ctx.lineTo(x1, y2);
         ctx.stroke();
       }
     }
@@ -249,55 +235,19 @@ function drawBoard() {
     }
   }
 
-  // Marcador
+  // marcador
   ctx.fillStyle = "#000000";
   ctx.font = "16px system-ui";
-  ctx.fillText(`Tú: ${state.scoreHuman}`, 10, 20);
-  ctx.fillText(`IA: ${state.scoreAI}`, size - 100, 20);
+  ctx.fillText(`Oponente: ${state.scoreOpponent}`, 10, 20);
+  ctx.fillText(`IA: ${state.scoreAI}`, size - 120, 20);
 }
 
-function getMoveFromClick(x, y) {
-  // Convertir coordenadas a la línea más cercana horizontal/vertical si está "cerca"
-  let best = null;
-  let bestDist = 12; // umbral de click
-
-  for (let r = 0; r < N; r++) {
-    for (let c = 0; c < N - 1; c++) {
-      const x1 = margin + c * step;
-      const y1 = margin + r * step;
-      const x2 = margin + (c + 1) * step;
-      const y2 = y1;
-      const dist = pointToSegmentDistance(x, y, x1, y1, x2, y2);
-      if (dist < bestDist && !state.horizontals[r][c]) {
-        bestDist = dist;
-        best = { type: "H", row: r, col: c };
-      }
-    }
-  }
-
-  for (let r = 0; r < N - 1; r++) {
-    for (let c = 0; c < N; c++) {
-      const x1 = margin + c * step;
-      const y1 = margin + r * step;
-      const x2 = x1;
-      const y2 = margin + (r + 1) * step;
-      const dist = pointToSegmentDistance(x, y, x1, y1, x2, y2);
-      if (dist < bestDist && !state.verticals[r][c]) {
-        bestDist = dist;
-        best = { type: "V", row: r, col: c };
-      }
-    }
-  }
-
-  return best;
-}
-
+// ---------- Conversión de clic a movimiento ----------
 function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
   const A = px - x1;
   const B = py - y1;
   const C = x2 - x1;
   const D = y2 - y1;
-
   const dot = A * C + B * D;
   const lenSq = C * C + D * D;
   let param = -1;
@@ -305,61 +255,117 @@ function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
 
   let xx, yy;
   if (param < 0) {
-    xx = x1;
-    yy = y1;
+    xx = x1; yy = y1;
   } else if (param > 1) {
-    xx = x2;
-    yy = y2;
+    xx = x2; yy = y2;
   } else {
     xx = x1 + param * C;
     yy = y1 + param * D;
   }
-
   const dx = px - xx;
   const dy = py - yy;
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-// ----- Manejo de clicks -----
-let blocking = false; // evitar múltiples clicks mientras la IA piensa
+function getMoveFromClick(x, y) {
+  let best = null;
+  let bestDist = 12;
 
-canvas.addEventListener("click", async (e) => {
-  if (blocking) return;
-  if (state.currentPlayer !== PLAYER_HUMAN) return;
-  if (isTerminal(state)) return;
-
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-
-  const move = getMoveFromClick(x, y);
-  if (!move) return;
-
-  const oldPlayer = state.currentPlayer;
-  state = applyMove(state, move);
-  drawBoard();
-
-  if (isTerminal(state)) return;
-  // Si no completaste caja, turno IA
-  if (state.currentPlayer === PLAYER_AI && oldPlayer !== PLAYER_AI) {
-    blocking = true;
-    await aiTurn();
-    blocking = false;
+  // horizontales
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N - 1; c++) {
+      const x1 = margin + c * step;
+      const y1 = margin + r * step;
+      const x2 = margin + (c + 1) * step;
+      const dist = pointToSegmentDistance(x, y, x1, y1, x2, y1);
+      if (dist < bestDist && !state.horizontals[r][c]) {
+        bestDist = dist;
+        best = { type: "H", row: r, col: c };
+      }
+    }
   }
-});
 
+  // verticales
+  for (let r = 0; r < N - 1; r++) {
+    for (let c = 0; c < N; c++) {
+      const x1 = margin + c * step;
+      const y1 = margin + r * step;
+      const y2 = margin + (r + 1) * step;
+      const dist = pointToSegmentDistance(x, y, x1, y1, x1, y2);
+      if (dist < bestDist && !state.verticals[r][c]) {
+        bestDist = dist;
+        best = { type: "V", row: r, col: c };
+      }
+    }
+  }
+  return best;
+}
+
+// ---------- IA ----------
 async function aiTurn() {
   while (state.currentPlayer === PLAYER_AI && !isTerminal(state)) {
     const best = getBestMove(state);
     if (!best) break;
     state = applyMove(state, best);
     drawBoard();
-    // Si la IA completa caja, sigue jugando; si no, sale del while por cambio de turno
     if (state.currentPlayer !== PLAYER_AI) break;
-    // pequeño delay visual
     await new Promise(res => setTimeout(res, 200));
   }
 }
 
-// ----- Inicio -----
+// ---------- Controles de inicio ----------
+const infoEl = document.getElementById("info");
+document.getElementById("btnHumanFirst").addEventListener("click", () => {
+  mode = "HUMAN_FIRST";
+  state = createInitialState();
+  state.currentPlayer = PLAYER_AI; // IA mueve primero para sugerirte
+  infoEl.textContent = "Modo: La IA te dice la primera jugada.";
+  drawBoard();
+  blocking = true;
+  aiTurn().then(() => {
+    // ahora es turno del "oponente", que eres tú siguiendo la sugerencia
+    blocking = false;
+    state.currentPlayer = PLAYER_OPPONENT;
+    infoEl.textContent = "Ahora replica en el papel lo que hizo la IA.";
+    drawBoard();
+  });
+});
+
+document.getElementById("btnOpponentFirst").addEventListener("click", () => {
+  mode = "OPPONENT_FIRST";
+  state = createInitialState();
+  state.currentPlayer = PLAYER_OPPONENT;
+  infoEl.textContent = "Marca las jugadas del oponente; la IA responde.";
+  drawBoard();
+});
+
+// ---------- Click en canvas ----------
+canvas.addEventListener("click", async e => {
+  if (!state || !mode) return;
+  if (blocking) return;
+  if (isTerminal(state)) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const move = getMoveFromClick(x, y);
+  if (!move) return;
+
+  // El clic SIEMPRE representa jugada del oponente humano
+  if (state.currentPlayer !== PLAYER_OPPONENT) return;
+
+  state = applyMove(state, move);
+  drawBoard();
+  if (isTerminal(state)) return;
+
+  if (state.currentPlayer === PLAYER_AI) {
+    blocking = true;
+    await aiTurn();
+    blocking = false;
+    drawBoard();
+  }
+});
+
+// Estado inicial solo para ver el tablero
+state = createInitialState();
 drawBoard();
