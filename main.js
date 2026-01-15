@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  const N = 5;
+  const N = 6;
   const canvas = document.getElementById("board");
   const ctx = canvas.getContext("2d");
   const size = canvas.width;
